@@ -84,7 +84,7 @@ static void composite(void){
         xi->byte_order=LSBFirst;
         xi->red_mask=0xFF0000; xi->green_mask=0xFF00; xi->blue_mask=0xFF;
         GC g=XDefaultGC(ui.dpy,ui.scr);
-        XPutImage(ui.dpy,ui.win,g,xi,0,0,MARGIN,CHROME_H,vw,min_i(tmp.h,vh),0);
+        XPutImage(ui.dpy,ui.win,g,xi,0,0,MARGIN,CHROME_H,vw,min_i(tmp.h,vh));
         /* limpa faixa abaixo se conteudo curto */
         if(tmp.h<vh){
             XSetForeground(ui.dpy,g,0xFFFFFF);
@@ -116,9 +116,8 @@ static void draw_chrome(void){
     for(int i=0;i<4;i++) XFillRectangle(ui.dpy,ui.win,ui.gc,btns[i].x,8,26,26);
     XSetForeground(ui.dpy,ui.gc,0xFFFFFF);
     for(int i=0;i<4;i++){
-        XCharStruct overall; int dirx,diry; unsigned uw,uh,ux,uy;
-        XTextExtents(ui.gc,(char*)btns[i].lbl,1,&dirx,&diry,&uw,&uh,&ux,&uy,&overall);
-        XDrawString(ui.dpy,ui.win,ui.gc,btns[i].x+13-overall.width/2,8+13+overall.ascent/2-1,(char*)btns[i].lbl,1);
+        XRectangle r; XTextExtents(ui.gc,(char*)btns[i].lbl,1,&r.x,&r.y,&r.width,&r.height);
+        XDrawString(ui.dpy,ui.win,ui.gc,btns[i].x+13-(int)r.width/2,8+13+(int)r.height/2,(char*)btns[i].lbl,1);
     }
     /* campo URL */
     int ux0=MARGIN+140, uw0=W-160-120;
@@ -128,7 +127,7 @@ static void draw_chrome(void){
     XSetForeground(ui.dpy,ui.gc,focused_url?0x4A90D9:0xC8C8C8);
     XDrawRectangle(ui.dpy,ui.win,ui.gc,ux0,8,uw0,26);
     /* texto URL com clip */
-    XSetClipRect(ui.dpy,ui.gc,CW,ux0+4,4,uw0-8,34,NULL);
+    { XRectangle cr={ux0+4,4,uw0-8,34}; XSetClipRectangles(ui.dpy,ui.gc,0,0,&cr,1,Unsorted); }
     XSetForeground(ui.dpy,ui.gc,0x111111);
     char shown[1024]; snprintf(shown,sizeof shown,"%s",addr);
     /* rola para manter cursor visivel: simplificado: mostra do inicio */
@@ -185,7 +184,34 @@ static int in_url_field(int x,int y,int W){
 }
 
 int main(int argc,char**argv){
-    (void)argc;(void)argv;
+    /* CLI: koth <url> [--dump]  -> --dump renderiza em PPM e sai (sem X, para testes/CI) */
+    const char *cli_url=NULL; int cli_dump=0;
+    for(int i=1;i<argc;i++){
+        if(!strcmp(argv[i],"--dump")) cli_dump=1;
+        else cli_url=argv[i];
+    }
+    if(cli_dump){
+        net_init();
+        Page p; page_init(&p);
+        const char *u = cli_url ? cli_url : "https://example.com";
+        double t0=now_sec();
+        if(page_load(&p,u)<0){ fprintf(stderr,"Koth: falha ao carregar %s: %s\n",u,p.errmsg); return 1; }
+        page_layout(&p,1280);
+        page_render(&p);
+        FILE *f=fopen("koth_dump.ppm","wb");
+        if(f){
+            Bitmap *b=&p.surf;
+            fprintf(f,"P6\n%d %d\n255\n",b->w,b->h);
+            for(int y=0;y<b->h;y++){
+                uint32_t *row=b->px+(size_t)y*b->stride;
+                for(int x=0;x<b->w;x++){ uint32_t c=row[x]; fputc(c>>16,f); fputc(c>>8,f); fputc(c,f); }
+            }
+            fclose(f);
+        }
+        printf("ok: koth_dump.ppm  conteudo=%dx%d  carga=%.1fms  layout+paint=%.1fms\n",
+               p.content_w,p.content_h,(p.load_time)*1000.0,(now_sec()-t0-p.load_time)*1000.0);
+        return 0;
+    }
     ui.dpy=XOpenDisplay(NULL);
     if(!ui.dpy){ fprintf(stderr,"Koth: sem display X11 ($DISPLAY)\n"); return 1; }
     ui.scr=DefaultScreen(ui.dpy);
@@ -294,7 +320,7 @@ int main(int argc,char**argv){
                         pg.scroll_y=max_i(pg.content_h-pg.viewport_h,0);content_dirty=1;
                     } else if(ks==XK_F5){
                         if(pg.current_url[0])start_load(pg.current_url);
-                    } else if((ks==XK_Back&&pg.hist_pos>0)||(ks==XK_Left)){
+                    } else if((ks==XK_Left)){
                         const char*u=page_back(&pg);if(u)start_load(u);
                     } else if(ks==XK_Right){
                         const char*u=page_forward(&pg);if(u)start_load(u);
