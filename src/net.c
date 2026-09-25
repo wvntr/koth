@@ -2,6 +2,7 @@
  * HTTP/1.1 com gzip/deflate (inflate proprio), redirects, cache HTTP em memoria.
  * TLS via OpenSSL carregado dinamicamente (dlopen) -> binario nao liga -lssl.
  */
+#include <stdarg.h>
 #include "koth.h"
 #include <ctype.h>
 #include <errno.h>
@@ -818,11 +819,15 @@ static int http_once(HttpResponse *r, const KUrl *u, double *tdns,double *tconn,
     return 0;
 }
 
+static void http_res_err(HttpResponse *r,const char *fmt,...){
+    va_list ap; va_start(ap,fmt); vsnprintf(r->err,sizeof r->err,fmt,ap); va_end(ap);
+}
+
 int http_get(HttpResponse *r, const char *url_str){
     memset(r,0,sizeof *r);
     double t_start=now_sec();
     KUrl u;
-    if(url_parse(&u,url_str)!=0){ snprintf(r->err,sizeof r->err,"URL invalida: %s",url_str); return -1; }
+    if(url_parse(&u,url_str)!=0){ http_res_err(r,"URL invalida (ou sem TLS: instale libssl.so.3): %s",url_str); return -1; }
     int hops=0;
     for(;;){
         Str fu;str_init(&fu);url_full(&u,&fu);

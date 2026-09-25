@@ -402,7 +402,8 @@ static void layout_node(DomNode *n, FlowCtx *f){
                 uint32_t ws=k;
                 while(k<tl&&t[k]!=' '&&t[k]!='\t'&&t[k]!='\n'&&t[k]!='\r')k++;
                 uint32_t wl=min_u32(k-ws,4095);
-                int wpw=text_width_utf8(t+ws,min_u32(wl,4095),sc);
+                char wtmp[4096]; int tn=(wl>4095)?4095:wl; memcpy(wtmp,t+ws,tn); wtmp[tn]=0;
+                int wpw=text_width_utf8(wtmp,sc);
                 if(lx!=sub.x && lx+wpw>sub.x+sub.w){
                     sub.cursor_y+=lh; lx=sub.x; lh=sc*GLYPH_H+2;
                 } else if(lh<sc*GLYPH_H+2) lh=sc*GLYPH_H+2;
